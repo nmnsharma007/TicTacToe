@@ -28,12 +28,83 @@ pos = (0,0)
 markers = []
 game_over = False
 winner = 0
-P_opponent = np.zeros((n,n)) # Probability transition matrix for opponent
 
-# iterate through all states
-for state in range(3**(n*n)):
-    pass
+def state2num(state):
+    """ Function for converting 2d state matrix to a number
+    Here, the matrix is written as a base 3 number of length n x n. 
+    """
+    num = 0
+    state = state.flatten()
+    for i in range(len(state)):
+        num = num * 3 + state[i]
+    return int(num)
 
+def num2state(num,n):
+    """ Function for converting the number back into a state matrix 
+    denoting the state of the board
+    """
+    cur_state = num
+    state = np.zeros((n,n))
+    for i in range(n*n):
+        rem = cur_state % 3
+        row = i // n
+        col = i % n
+        state[row][col] = rem
+        cur_state /= 3
+    return state
+
+def check_winning(state):
+    """ Check if the state is a winning state
+    """
+    n = state.shape[0]
+    temp_state = np.copy(state)
+    for i in range(n):
+        for j in range(n):
+            if temp_state[i][j] == 2:
+                temp_state[i][j] = -1
+    for row in range(n):
+        if np.sum(temp_state[row,:]) == n or np.sum(temp_state[row,:]) == -n:
+            return True
+    for col in range(n):
+        if np.sum(temp_state[:,col]) == n or np.sum(temp_state[:,col]) == -n:
+            return True
+    if np.trace(temp_state) == n or np.trace(temp_state) == -n:
+        return True
+    anti_diagonal_sum = 0
+    for i in range(n):
+        anti_diagonal_sum += temp_state[i][n-i-1]
+    return anti_diagonal_sum == n or anti_diagonal_sum == -n
+
+def build_opponent_matrix(P_opponent,n):
+    """ Build probability transition matrix to simulate the opponent.
+    Here, 0 -> no marker on a cell, 1 -> an X on a cell and 2 -> O on
+    a cell.
+    """ 
+    for state in range(3**(n*n)):
+        board = num2state(state,n)
+        num_of_twos = (board == 2).sum()
+        num_of_ones = (board == 1).sum()
+        # if number of X's and O's are valid, for opponent to make a move,
+        # number of X's must be 1 more than number of O's
+        if num_of_ones - num_of_twos == 1:
+            # the state should not be a winning state already
+            if not check_winning(board):
+                # count number of empty spaces available
+                empty_spaces = (board == 0).sum()
+                if empty_spaces != 0:
+                    for i in range(n):
+                        for j in range(n):
+                            if board[i][j] == 0:
+                                new_board = np.copy(board)
+                                new_board[i][j] = 2
+                                next_state = state2num(new_board)
+                                # assign probability to each possible next state
+                                P_opponent[state][next_state] = 1.0 / empty_spaces
+    return P_opponent
+
+P_opponent = np.zeros((3**(n*n),3**(n*n))) # Probability transition matrix for opponent
+P_opponent = build_opponent_matrix(P_opponent,n)
+print(P_opponent)
 #setup a rectangle for "Play Again" Option
 again_rect = Rect(screen_width // 2 - 80, screen_height // 2, 160, 50)
 
@@ -146,6 +217,7 @@ while run:
     #draw board and markers first
     draw_board()
     draw_markers()
+
 
     #handle events
     for event in pygame.event.get():
