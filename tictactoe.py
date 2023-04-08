@@ -2,7 +2,7 @@
 import pygame
 from pygame.locals import *
 import numpy as np
-
+import time
 
 # in the board, 0 denotes an empty cell, 1 denotes X and 2 denotes O
 def state2num(state):
@@ -152,6 +152,12 @@ def build_transition_matrices(P,n=3):
 P = np.zeros((9,num_states,num_states))
 P = build_transition_matrices(P)
 
+def arbitrary_policy(markers):
+    for i in range(3):
+        for j in range(3):
+            if markers[i][j] == 0:
+                return (i,j)
+
 pygame.init()
 
 screen_height = 300
@@ -276,7 +282,6 @@ while run:
     #draw board and markers first
     draw_board()
     draw_markers()
-    
     #handle events
     for event in pygame.event.get():
         #handle game exit
@@ -285,38 +290,40 @@ while run:
         #run new game
         if game_over == False:
             #check for mouseclick
-            if event.type == pygame.MOUSEBUTTONDOWN and clicked == False:
-                clicked = True
-            if event.type == pygame.MOUSEBUTTONUP and clicked == True:
-                clicked = False
-                pos = pygame.mouse.get_pos()
-                cell_x = pos[0] // 100
-                cell_y = pos[1] // 100
-                if markers[cell_x][cell_y] == 0:
-                    action = cell_x * 3 + cell_y
-                    # print(action)
-                    game_state = np.array(markers)
-                    game_state = np.where(game_state == -1,2,game_state)
-                    state_num = state2num(game_state)
-                    q = np.random.uniform()
-                    probability_sum = 0
-                    for i in range(P[action].shape[1]):
-                        reachable_state = reduced_state[state_num]
-                        probability_sum += P[action][reachable_state][i]
-                        # print(reduced_state[state_num])
-                        if probability_sum >= q:
-                            new_state = actual_state[i]
-                            next_state = num2state(new_state)
-                            print(next_state)
-                            break
-                    for i in range(3):
-                        for j in range(3):
-                            if next_state[i][j] == 2:
-                                next_state[i][j] = -1
-                            markers[i][j] = next_state[i][j]
-                    # markers[cell_x][cell_y] = player
-                    # player *= -1
-                    check_game_over()
+            # if event.type == pygame.MOUSEBUTTONDOWN and clicked == False:
+                # clicked = True
+            # if event.type == pygame.MOUSEBUTTONUP and clicked == True:
+                # clicked = False
+            
+            # pos = pygame.mouse.get_pos()
+            # cell_x = pos[0] // 100
+            # cell_y = pos[1] // 100
+            cell_x,cell_y = arbitrary_policy(markers)
+            # if markers[cell_x][cell_y] == 0:
+            action = cell_x * 3 + cell_y
+            # print(action)
+            game_state = np.array(markers)
+            game_state = np.where(game_state == -1,2,game_state)
+            state_num = state2num(game_state)
+            q = np.random.uniform()
+            probability_sum = 0
+            for i in range(P[action].shape[1]):
+                reachable_state = reduced_state[state_num]
+                probability_sum += P[action][reachable_state][i]
+                # print(reduced_state[state_num])
+                if probability_sum >= q:
+                    new_state = actual_state[i]
+                    next_state = num2state(new_state)
+                    print(next_state)
+                    break
+            for i in range(3):
+                for j in range(3):
+                    if next_state[i][j] == 2:
+                        next_state[i][j] = -1
+                    markers[i][j] = next_state[i][j]
+            # markers[cell_x][cell_y] = player
+            # player *= -1
+            check_game_over()
 
     #check if game has been won
     if game_over == True:
