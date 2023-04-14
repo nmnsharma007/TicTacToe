@@ -51,6 +51,13 @@ def check_winning(state):
         anti_diagonal_sum += temp_state[i][n-i-1]
     return anti_diagonal_sum == n
 
+def check_draw(state):
+    """Check if state is a draw state
+    """
+    numX = (state == 1).sum()
+    numO = (state == 2).sum()
+    return numX + numO == 9
+
 def check_losing(state):
     """ Check if the state is a losing state
     """
@@ -90,16 +97,18 @@ for i in range((3**9)):
             continue
            # create a mapping between reduced state number and actual state number
            # for reducing the state space size
-        # print(i)
         reduced_state[i] = num_states
         actual_state[num_states] = i
         num_states += 1
     elif numX == numO + 1:
-        if check_losing(state):
-            continue
-        reduced_state[i] = num_states
-        actual_state[num_states] = i
-        num_states += 1
+        if check_winning(state) and not check_losing(state): # win state
+            reduced_state[i] = num_states
+            actual_state[num_states] = i
+            num_states += 1
+        elif numX + numO == 9 and not check_losing(state): # draw state
+            reduced_state[i] = num_states
+            actual_state[num_states] = i
+            num_states += 1
 
 print(f"Number of valid states: {num_states}")
 
@@ -151,12 +160,63 @@ def build_transition_matrices(P,n=3):
 #create probability transition matrices for each the 9 actions
 P = np.zeros((9,num_states,num_states))
 P = build_transition_matrices(P)
+absorbing_states = 0
+for i in range(num_states):
+    true_state = actual_state[i]
+    board = num2state(true_state)
+    if check_winning(board) or check_losing(board) or check_draw(board):
+        absorbing_states += 1
+
+print(f"Number of absorbing states: {absorbing_states}")
 
 def arbitrary_policy(markers):
     for i in range(3):
         for j in range(3):
             if markers[i][j] == 0:
                 return (i,j)
+            
+""" Function for calculating immediate reward
+"""
+def reward(cur_state_num,action):
+    # if the state is a losing state, no action is possible
+    board = num2state(cur_state_num)
+    if check_losing(board):
+        return 0
+    # if the state is already winning, no action is possible again since game is over
+    if check_winning(board):
+        return 0
+    total = 0
+    board = board.flatten()
+    # check if the board cell is empty for keeping an X there
+    if board[action] == 0:
+        # iterate over the row of the probability matrix of given action
+        for i,probability in enumerate(P[action][reduced_state[cur_state_num]].shape[0]):
+            next_state_num = actual_state[i]
+            next_state_board = num2state(next_state_num)
+            if check_losing(next_state_board):
+                total += probability * (-1.0)
+            elif check_winning(next_state_board):
+                total += probability * (1.0)
+    else:
+        return 0
+    return total
+
+def value_iteration():
+    Vn = np.zeros((num_states,1)) # value function vector
+    while True:
+        V_next = np.zeros((num_states,1)) # value function for next iteration
+        # go through all states
+        for i in range(num_states):
+            V_next[i] = np.inf
+            # go through all the actions
+            true_state_num = actual_state[i]
+            for u in range(9):
+                # convert into 2D state of the board
+                board_state = num2state(true_state_num)
+                board_state = board_state.flatten()
+                immediate_reward = reward(true_state_num,u)
+                V_next[i] = min(V_next[i],immediate_reward + np.matmul(P[u][i],Vn).item())
+        
 
 pygame.init()
 
