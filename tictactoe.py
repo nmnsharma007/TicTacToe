@@ -180,43 +180,140 @@ def arbitrary_policy(markers):
 def reward(cur_state_num,action):
     # if the state is a losing state, no action is possible
     board = num2state(cur_state_num)
-    if check_losing(board):
-        return 0
+    # if check_losing(board):
+    #     return 0
     # if the state is already winning, no action is possible again since game is over
-    if check_winning(board):
-        return 0
+    # if check_winning(board):
+    #     return 0
     total = 0
     board = board.flatten()
     # check if the board cell is empty for keeping an X there
-    if board[action] == 0:
+    # if board[action] == 0:
         # iterate over the row of the probability matrix of given action
-        for i,probability in enumerate(P[action][reduced_state[cur_state_num]].shape[0]):
-            next_state_num = actual_state[i]
-            next_state_board = num2state(next_state_num)
-            if check_losing(next_state_board):
-                total += probability * (-1.0)
-            elif check_winning(next_state_board):
-                total += probability * (1.0)
-    else:
-        return 0
+    board[action] = 1
+    board = board.reshape((3,3))
+    if check_winning(board):
+        return 1.0
+    if check_draw(board):
+        return 0.0
+    # print(f"Board before: {board}")
+    board = board.flatten()
+    opponent_actions = get_actions(board)
+    for op_ac in opponent_actions:
+        board[op_ac] = 2
+        board = board.reshape((3,3))
+        # print(f"Board after: {board}")
+        new_state = reduced_state[state2num(board)]
+        probability = P[action][reduced_state[cur_state_num]][new_state]
+        if check_losing(board):
+            total += probability * (-1.0)
+        board = board.flatten()
+        board[op_ac] = 0
+    # else:
+    #     return 0
     return total
+
+""" get empty cells on the board or set of possible actions
+"""
+def get_actions(board):
+    actions = []
+    board = board.flatten()
+    for i in range(9):
+        if board[i] == 0:
+            actions.append(i)
+    return actions
 
 def value_iteration():
     Vn = np.zeros((num_states,1)) # value function vector
+    start = time.time()
     while True:
         V_next = np.zeros((num_states,1)) # value function for next iteration
         # go through all states
         for i in range(num_states):
-            V_next[i] = np.inf
+            V_next[i][0] = 100000000
             # go through all the actions
             true_state_num = actual_state[i]
-            for u in range(9):
+            cur_board_state = num2state(true_state_num)
+            # no rewards or actions for winning, losing and draw states
+            if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
+                continue
+            actions = get_actions(cur_board_state)
+            # print(f"Current state: {cur_board_state}, actions: {actions}")
+            cur_board_state = cur_board_state.flatten()
+            for u in actions:
                 # convert into 2D state of the board
-                board_state = num2state(true_state_num)
-                board_state = board_state.flatten()
+                # board_state = num2state(true_state_num)
+                # board_state = board_state.flatten()
                 immediate_reward = reward(true_state_num,u)
-                V_next[i] = min(V_next[i],immediate_reward + np.matmul(P[u][i],Vn).item())
+                cur_board_state[u] = 1
+                next_value_fn = immediate_reward
+                cur_board_state = cur_board_state.reshape((3,3))
+                if not check_winning(cur_board_state):
+                    cur_board_state = cur_board_state.flatten()
+                    opponent_actions = get_actions(cur_board_state)
+                    for op_ac in opponent_actions:
+                        cur_board_state[op_ac] = 2
+                        new_state = reduced_state[state2num(cur_board_state)]
+                        next_value_fn += P[u][i][new_state] * Vn[new_state][0]
+                        # V_next[i] = min(V_next[i],immediate_reward + np.matmul(P[u][i],Vn).item())
+                        cur_board_state[op_ac] = 0
+                else:
+                    cur_board_state = cur_board_state.flatten()
+
+                cur_board_state[u] = 0
+                V_next[i][0] = min(V_next[i][0],next_value_fn)
+            # print(f"Done state: {i}")
+        max_dif = 0
+        for i in range(num_states):
+            max_dif = max(max_dif,abs(V_next[i][0]-Vn[i][0]))
+        if max_dif <= 0.01:
+            break
+        Vn = np.copy(V_next)
+    
+
+    end = time.time()
+    print(f"Time taken: {end-start}")
+    print("Optimal Value function computed")
+    optimal_policy = [] 
+    for i in range(num_states):
+        min_value = np.inf
+        min_action = -1
+        true_state_num = actual_state[i]
+        cur_board_state = num2state(true_state_num)
+        if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
+            optimal_policy.append(-1)
+            continue
+        cur_board_state = cur_board_state.flatten()
+        actions = get_actions(cur_board_state)
+        for u in actions:
+            # convert into 2D state of the board
+            immediate_reward = reward(true_state_num,u)
+            total_reward = immediate_reward
+            cur_board_state[u] = 1
+            next_value_fn = immediate_reward
+            cur_board_state = cur_board_state.reshape((3,3))
+            if not check_winning(cur_board_state):
+                cur_board_state = cur_board_state.flatten()
+                opponent_actions = get_actions(cur_board_state)
+                for op_ac in opponent_actions:
+                    cur_board_state[op_ac] = 2
+                    new_state = reduced_state[state2num(cur_board_state)]
+                    next_value_fn += P[u][i][new_state] * Vn[new_state][0]
+                    # V_next[i] = min(V_next[i],immediate_reward + np.matmul(P[u][i],Vn).item())
+                    cur_board_state[op_ac] = 0
+            else:
+                cur_board_state = cur_board_state.flatten()
+
+            cur_board_state[u] = 0
+            if min_value >= total_reward:
+                min_value = total_reward
+                min_action = u
         
+        optimal_policy.append(min_action)
+    return optimal_policy
+
+policy = value_iteration()
+print(policy)
 
 pygame.init()
 
