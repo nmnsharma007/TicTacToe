@@ -178,39 +178,26 @@ def arbitrary_policy(markers):
 """ Function for calculating immediate reward
 """
 def reward(cur_state_num,action):
-    # if the state is a losing state, no action is possible
     board = num2state(cur_state_num)
-    # if check_losing(board):
-    #     return 0
-    # if the state is already winning, no action is possible again since game is over
-    # if check_winning(board):
-    #     return 0
     total = 0
     board = board.flatten()
-    # check if the board cell is empty for keeping an X there
-    # if board[action] == 0:
-        # iterate over the row of the probability matrix of given action
     board[action] = 1
     board = board.reshape((3,3))
     if check_winning(board):
         return 1.0
     if check_draw(board):
         return 0.0
-    # print(f"Board before: {board}")
     board = board.flatten()
     opponent_actions = get_actions(board)
     for op_ac in opponent_actions:
         board[op_ac] = 2
         board = board.reshape((3,3))
-        # print(f"Board after: {board}")
         new_state = reduced_state[state2num(board)]
         probability = P[action][reduced_state[cur_state_num]][new_state]
         if check_losing(board):
             total += probability * (-1.0)
         board = board.flatten()
         board[op_ac] = 0
-    # else:
-    #     return 0
     return total
 
 """ get empty cells on the board or set of possible actions
@@ -222,6 +209,60 @@ def get_actions(board):
         if board[i] == 0:
             actions.append(i)
     return actions
+
+def Q_learning():
+    Q = np.zeros((num_states,9))
+    start = time.time()
+    # generate 1000 episodes
+    for _ in range(1000):
+        trajectory = [] # create trajectory
+        current_board = np.zeros((3,3))
+        while True:
+            current_state_num = state2num(current_board)
+            current_state_red = reduced_state[current_state_num]
+            trajectory.append(current_state_red) # append the current state
+            current_board = current_board.flatten()
+            actions = get_actions(current_board)
+            action = np.random.choice(actions)
+            current_board[action] = 1
+            trajectory.append(action) # append the current action
+            current_board = current_board.reshape((3,3))
+            if check_winning(current_board):
+                # next_state_num = state2num(current_board)
+                # next_state_red = reduced_state[next_state_num]
+                # trajectory.append(next_state_red) # append the next state
+                trajectory.append(1) # append reward for win
+                break
+            if check_draw(current_board):
+                trajectory.append(0)
+                break
+            current_board = current_board.flatten()
+            opponent_actions = get_actions(current_board)
+            op_ac = np.random.choice(opponent_actions)
+            current_board[op_ac] = 2
+            current_board = current_board.reshape((3,3))
+            if check_losing(current_board):
+                trajectory.append(-1) # append reward for losing
+                break
+            trajectory.append(0) # append reward for nothing happened
+
+        last_state_num = state2num(current_board)
+        last_state_red = reduced_state[last_state_num]
+        trajectory.append(last_state_red) # append the next state
+        # print(trajectory)
+        # break
+
+        Q_k_1 = np.copy(Q)
+        for i in range(0,len(trajectory)-1,3):
+            s_k = trajectory[i]
+            a_k = trajectory[i+1]
+            r_k_1 = trajectory[i+2]
+            s_k_1 = trajectory[i+3]
+            Q_k_1[s_k][a_k] = Q[s_k][a_k] + (1 / (i+1)**2) * (r_k_1 + np.max(Q[s_k_1]) - Q[s_k][a_k])
+        
+        Q = np.copy(Q_k_1)
+    print("Q table computerd")
+    return Q
 
 def value_iteration():
     Vn = np.zeros((num_states,1)) # value function vector
@@ -236,14 +277,11 @@ def value_iteration():
             cur_board_state = num2state(true_state_num)
             # no rewards or actions for winning, losing and draw states
             if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
+                V_next[i][0] = 0
                 continue
             actions = get_actions(cur_board_state)
-            # print(f"Current state: {cur_board_state}, actions: {actions}")
             cur_board_state = cur_board_state.flatten()
             for u in actions:
-                # convert into 2D state of the board
-                # board_state = num2state(true_state_num)
-                # board_state = board_state.flatten()
                 immediate_reward = reward(true_state_num,u)
                 cur_board_state[u] = 1
                 next_value_fn = immediate_reward
@@ -255,14 +293,12 @@ def value_iteration():
                         cur_board_state[op_ac] = 2
                         new_state = reduced_state[state2num(cur_board_state)]
                         next_value_fn += P[u][i][new_state] * Vn[new_state][0]
-                        # V_next[i] = min(V_next[i],immediate_reward + np.matmul(P[u][i],Vn).item())
                         cur_board_state[op_ac] = 0
                 else:
                     cur_board_state = cur_board_state.flatten()
 
                 cur_board_state[u] = 0
                 V_next[i][0] = min(V_next[i][0],next_value_fn)
-            # print(f"Done state: {i}")
         max_dif = 0
         for i in range(num_states):
             max_dif = max(max_dif,abs(V_next[i][0]-Vn[i][0]))
@@ -281,16 +317,14 @@ def value_iteration():
         true_state_num = actual_state[i]
         cur_board_state = num2state(true_state_num)
         if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
-            optimal_policy.append(-1)
+            optimal_policy.append(0)
             continue
         cur_board_state = cur_board_state.flatten()
         actions = get_actions(cur_board_state)
         for u in actions:
-            # convert into 2D state of the board
             immediate_reward = reward(true_state_num,u)
             total_reward = immediate_reward
             cur_board_state[u] = 1
-            next_value_fn = immediate_reward
             cur_board_state = cur_board_state.reshape((3,3))
             if not check_winning(cur_board_state):
                 cur_board_state = cur_board_state.flatten()
@@ -298,8 +332,7 @@ def value_iteration():
                 for op_ac in opponent_actions:
                     cur_board_state[op_ac] = 2
                     new_state = reduced_state[state2num(cur_board_state)]
-                    next_value_fn += P[u][i][new_state] * Vn[new_state][0]
-                    # V_next[i] = min(V_next[i],immediate_reward + np.matmul(P[u][i],Vn).item())
+                    total_reward += P[u][i][new_state] * Vn[new_state][0]
                     cur_board_state[op_ac] = 0
             else:
                 cur_board_state = cur_board_state.flatten()
@@ -310,10 +343,23 @@ def value_iteration():
                 min_action = u
         
         optimal_policy.append(min_action)
-    return optimal_policy
+    return optimal_policy,Vn
 
-policy = value_iteration()
-print(policy)
+# value_policy,Vn = value_iteration()
+# print(policy)
+# start = np.zeros((3,3))
+# print(f"Value function for start state: {Vn[reduced_state[state2num(start)]][0]}")
+Q = Q_learning()
+
+def value_optimal_policy(policy,markers):
+    board = np.array(markers)
+    for i in range(3):
+        for j in range(3):
+            if board[i][j] == -1:
+                board[i][j] = 2
+    state_num = reduced_state[state2num(board)]
+    optimal_action = policy[state_num]
+    return optimal_action
 
 pygame.init()
 
@@ -446,38 +492,41 @@ while run:
             run = False
         #run new game
         if game_over == False:
-            #check for mouseclick
-            # if event.type == pygame.MOUSEBUTTONDOWN and clicked == False:
-                # clicked = True
-            # if event.type == pygame.MOUSEBUTTONUP and clicked == True:
-                # clicked = False
-            
-            # pos = pygame.mouse.get_pos()
-            # cell_x = pos[0] // 100
-            # cell_y = pos[1] // 100
             cell_x,cell_y = arbitrary_policy(markers)
-            # if markers[cell_x][cell_y] == 0:
             action = cell_x * 3 + cell_y
+            # action = value_optimal_policy(value_policy,markers)
+            print(f"Action:{action}")
             # print(action)
             game_state = np.array(markers)
             game_state = np.where(game_state == -1,2,game_state)
-            state_num = state2num(game_state)
+            cur_state_num = state2num(game_state) # get the current state number
+            cur_state_red = reduced_state[cur_state_num] # get the reduced state number for current state
             q = np.random.uniform()
             probability_sum = 0
-            for i in range(P[action].shape[1]):
-                reachable_state = reduced_state[state_num]
-                probability_sum += P[action][reachable_state][i]
-                # print(reduced_state[state_num])
-                if probability_sum >= q:
-                    new_state = actual_state[i]
-                    next_state = num2state(new_state)
-                    print(next_state)
-                    break
+            game_state = game_state.flatten()
+            game_state[action] = 1
+            game_state = game_state.reshape((3,3))
+            if not check_winning(game_state):
+                if not check_draw(game_state):
+                    game_state = game_state.flatten()
+                    opponent_actions = get_actions(game_state)
+                    for op_ac in opponent_actions:
+                        game_state[op_ac] = 2
+                        next_state_red = reduced_state[state2num(game_state)]
+                        probability_sum += P[action][cur_state_red][next_state_red]
+                        # print(reduced_state[state_num])
+                        if probability_sum >= q:
+                            game_state = game_state.reshape((3,3))
+                            break
+
+                        game_state[op_ac] = 0
+                
+
             for i in range(3):
                 for j in range(3):
-                    if next_state[i][j] == 2:
-                        next_state[i][j] = -1
-                    markers[i][j] = next_state[i][j]
+                    if game_state[i][j] == 2:
+                        game_state[i][j] = -1
+                    markers[i][j] = game_state[i][j]
             # markers[cell_x][cell_y] = player
             # player *= -1
             check_game_over()
