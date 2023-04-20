@@ -3,6 +3,7 @@ import pygame
 from pygame.locals import *
 import numpy as np
 import time
+import copy
 
 # in the board, 0 denotes an empty cell, 1 denotes X and 2 denotes O
 def state2num(state):
@@ -264,6 +265,104 @@ def Q_learning():
     print("Q table computerd")
     return Q
 
+def policy_evaluation(pi):
+    Vn = np.zeros((num_states,1)) # value function vector
+    while True:
+        V_next = np.zeros((num_states,1)) # value function for next iteration
+        # go through all states
+        for i in range(num_states):
+            # go through all the actions
+            true_state_num = actual_state[i]
+            cur_board_state = num2state(true_state_num)
+            # no rewards or actions for winning, losing and draw states
+            if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
+                continue
+            u = pi[i] # get the action for the current state
+            cur_board_state = cur_board_state.flatten()
+            immediate_reward = reward(true_state_num,u)
+            cur_board_state[u] = 1
+            next_value_fn = immediate_reward
+            cur_board_state = cur_board_state.reshape((3,3))
+            if not check_winning(cur_board_state):
+                cur_board_state = cur_board_state.flatten()
+                opponent_actions = get_actions(cur_board_state)
+                for op_ac in opponent_actions:
+                    cur_board_state[op_ac] = 2
+                    new_state = reduced_state[state2num(cur_board_state)]
+                    next_value_fn += P[u][i][new_state] * Vn[new_state][0]
+                    cur_board_state[op_ac] = 0
+            else:
+                cur_board_state = cur_board_state.flatten()
+            V_next[i][0] = next_value_fn
+        max_dif = 0
+        for i in range(num_states):
+            max_dif = max(max_dif,abs(V_next[i][0]-Vn[i][0]))
+        if max_dif <= 0.01:
+            break
+        Vn = np.copy(V_next)
+    return Vn
+
+def policy_iteration():
+    pi = [] # initial policy is an arbitrary policy
+    for i in range(num_states):
+        true_state_num = actual_state[i]
+        cur_board_state = num2state(true_state_num)
+        if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
+            pi.append(0) # append any random action because it will never be taken
+            continue
+        cur_board_state = cur_board_state.flatten()
+        for u in range(9):
+            if cur_board_state[u] == 0:
+                pi.append(u)
+                break
+    print("Arbitrary policy Computed")
+    start = time.time()
+    while True:
+        V_pi_k = policy_evaluation(pi)
+        pi_next = copy.deepcopy(pi)
+        for i in range(num_states):
+            true_state_num = actual_state[i]
+            cur_board_state = num2state(true_state_num)
+            if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
+                continue
+            actions = get_actions(cur_board_state)
+            cur_board_state = cur_board_state.flatten()
+            max_action = -1
+            max_value = -100000
+            for u in actions:
+                immediate_reward = reward(true_state_num,u)
+                cur_board_state[u] = 1
+                next_value_fn = immediate_reward
+                cur_board_state = cur_board_state.reshape((3,3))
+                if not check_winning(cur_board_state):
+                    cur_board_state = cur_board_state.flatten()
+                    opponent_actions = get_actions(cur_board_state)
+                    for op_ac in opponent_actions:
+                        cur_board_state[op_ac] = 2
+                        new_state = reduced_state[state2num(cur_board_state)]
+                        next_value_fn += P[u][i][new_state] * V_pi_k[new_state][0]
+                        cur_board_state[op_ac] = 0
+                else:
+                    cur_board_state = cur_board_state.flatten()
+
+                cur_board_state[u] = 0
+                if next_value_fn >= max_value:
+                    max_value = next_value_fn
+                    max_action = u
+            
+            pi_next[i] = max_action
+        
+        if pi_next == pi:
+            break
+        print("Next iteration")
+        pi = copy.deepcopy(pi_next)
+    
+    end = time.time()
+    print(f"Policy iteration done in {end-start}s")
+
+    return pi
+
+
 def value_iteration():
     Vn = np.zeros((num_states,1)) # value function vector
     start = time.time()
@@ -271,7 +370,7 @@ def value_iteration():
         V_next = np.zeros((num_states,1)) # value function for next iteration
         # go through all states
         for i in range(num_states):
-            V_next[i][0] = 100000000
+            V_next[i][0] = -100000000
             # go through all the actions
             true_state_num = actual_state[i]
             cur_board_state = num2state(true_state_num)
@@ -298,7 +397,7 @@ def value_iteration():
                     cur_board_state = cur_board_state.flatten()
 
                 cur_board_state[u] = 0
-                V_next[i][0] = min(V_next[i][0],next_value_fn)
+                V_next[i][0] = max(V_next[i][0],next_value_fn)
         max_dif = 0
         for i in range(num_states):
             max_dif = max(max_dif,abs(V_next[i][0]-Vn[i][0]))
@@ -312,8 +411,8 @@ def value_iteration():
     print("Optimal Value function computed")
     optimal_policy = [] 
     for i in range(num_states):
-        min_value = np.inf
-        min_action = -1
+        max_value = -100000
+        max_action = -1
         true_state_num = actual_state[i]
         cur_board_state = num2state(true_state_num)
         if check_winning(cur_board_state) or check_losing(cur_board_state) or check_draw(cur_board_state):
@@ -338,20 +437,31 @@ def value_iteration():
                 cur_board_state = cur_board_state.flatten()
 
             cur_board_state[u] = 0
-            if min_value >= total_reward:
-                min_value = total_reward
-                min_action = u
+            if max_value <= total_reward:
+                max_value = total_reward
+                max_action = u
         
-        optimal_policy.append(min_action)
+        optimal_policy.append(max_action)
     return optimal_policy,Vn
 
 # value_policy,Vn = value_iteration()
 # print(policy)
 # start = np.zeros((3,3))
 # print(f"Value function for start state: {Vn[reduced_state[state2num(start)]][0]}")
-Q = Q_learning()
+policy_iteration_policy = policy_iteration()
+# Q = Q_learning()
 
 def value_optimal_policy(policy,markers):
+    board = np.array(markers)
+    for i in range(3):
+        for j in range(3):
+            if board[i][j] == -1:
+                board[i][j] = 2
+    state_num = reduced_state[state2num(board)]
+    optimal_action = policy[state_num]
+    return optimal_action
+
+def optimal_policy_iteration(policy,markers):
     board = np.array(markers)
     for i in range(3):
         for j in range(3):
@@ -492,11 +602,13 @@ while run:
             run = False
         #run new game
         if game_over == False:
-            cell_x,cell_y = arbitrary_policy(markers)
-            action = cell_x * 3 + cell_y
+            # use arbitrary policy
+            # cell_x,cell_y = arbitrary_policy(markers)
+            # action = cell_x * 3 + cell_y
+            # use optimal policy computed using value iteration
             # action = value_optimal_policy(value_policy,markers)
-            print(f"Action:{action}")
-            # print(action)
+            # use optimal policy using policy iteration
+            action = optimal_policy_iteration(policy_iteration_policy,markers)
             game_state = np.array(markers)
             game_state = np.where(game_state == -1,2,game_state)
             cur_state_num = state2num(game_state) # get the current state number
